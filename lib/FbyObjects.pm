@@ -66,7 +66,7 @@ sub _sortinstances
 {
 	my ($self,$db) = @_;
 	my @instsunsorted = $self->instances($db);
-	my @insts = sort { $b->dimensions->[0] <=> $a->dimensions->[0] } @instsunsorted;
+	my @insts = sort { $a->dimensions->[0] <=> $b->dimensions->[0] } @instsunsorted;
 	return @insts;
 }
 
