@@ -52,15 +52,15 @@ sub get_attrs($)
 	my %attrs;
 	foreach my $attr ($type->meta->get_all_attributes)
 	{
-		if (substr($attr,0,1) ne '_')
+		if (substr($attr->name,0,1) ne '_')
 		{
 			if (defined($attr->{type_constraint}))
 			{
-				$attrs{$attr->{name}} = $typemappings{$attr->{type_constraint}};
+				$attrs{$attr->name} = $typemappings{$attr->{type_constraint}};
 			}
 			else
 			{
-				$attrs{$attr->{name}} = 'TEXT';
+				$attrs{$attr->name} = 'TEXT';
 			}
 		}
 	}
@@ -126,7 +126,7 @@ sub load($$@)
 {
 	my $self = shift;
 	my $class = shift;
-	my $keys = (ref($_[0]) eq 'HASH') ? \%{$_[0]} : {@_};
+	my $keys = @_ ? ((ref($_[0]) eq 'HASH') ? \%{$_[0]} : {@_}) : undef;
 
 	my $attrs = $self->get_attrs($class);
 	my @attrs = keys %$attrs;
@@ -159,6 +159,21 @@ sub load($$@)
 	return @objs;
 }
 
+
+sub delete($$@)
+{
+	my $self = shift;
+	my $class = shift;
+	my $keys = @_ ? ((ref($_[0]) eq 'HASH') ? \%{$_[0]} : {@_}) : undef;
+
+	my $attrs = $self->get_attrs($class);
+	my @attrs = keys %$attrs;
+
+	my $sql = 'DELETE FROM '.$self->tablename($class)
+		.' WHERE '.join(' AND ', map { "$_=".$self->dbh()->quote($keys->{$_}) } keys %$keys);
+	$self->do($sql);
+}
+
 sub load_one($$@)
 {
 	my ($self, $class, @keys) = @_;
@@ -167,7 +182,7 @@ sub load_one($$@)
 		.join(', ' , @keys).")\n"."\n".CallStack
 		unless @ret < 2;
 
-	return (@ret == 1) ? $ret[0] : undef;
+	return (scalar(@ret) == 1) ? $ret[0] : undef;
 }
 
 

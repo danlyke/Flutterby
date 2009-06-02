@@ -13,7 +13,6 @@ has outputdir => (is => 'rw', isa => 'Str');
 has stagingdir => (is => 'rw', isa => 'Str');
 has sourcedir => (is => 'rw', isa => 'Str');
 has db => (is => 'rw');
-has wikiobjects => (is => 'rw');
 has suffix => (is => 'rw', isa => 'Str');
 has wikiobj => (is => 'rw');
 has googlemapnum => (is => 'rw', isa => 'Int');
@@ -23,9 +22,7 @@ sub WebPathFromFilename($)
 {
 	my ($self, $path) = @_;
 	my $outputdir = $self->outputdir;
-	print "Outputdir: $outputdir $path\n";
 	$path =~ s/^$outputdir//;
-	print "   $path\n";
 	return $path;
 }
 
@@ -48,6 +45,10 @@ __PACKAGE__->meta->make_immutable;
 
 
 package Fby;
+
+use Carp;
+$Carp::Verbose = 1;
+
 my $outputdir; # = '/var/www';
 
 
@@ -162,7 +163,6 @@ use Email::Date::Format qw(email_date);
 use Cwd;
 
 my $stagingdir = getcwd.'/html_staging';
-my %wikiobjects;
 my $sourcedir = 'mvs';
 
 
@@ -180,7 +180,7 @@ $db->connect(
 
 unless (defined($existingdb))
 {
-	foreach ('ImageInstance', 'Image')
+	foreach ('ImageInstance', 'Image', 'WikiEntry', 'WikiEntryReference')
 	{
 		my $sql = $db->create_statement($_);
 		print "Doing $sql\n";
@@ -188,7 +188,8 @@ unless (defined($existingdb))
 	}
 	$db->do('CREATE INDEX ImageInstance_image_id ON ImageInstance(image_id)');
 	$db->do('CREATE INDEX ImageInstance_filename ON ImageInstance(filename)');
-	
+	$db->do('create unique index wikientryname on wikientry(name)');
+	$db->do('create index to_id on wikientryreference(to_id)');
 }
 
 
@@ -280,27 +281,36 @@ sub TagWiki()
 		}
 
 		$r = "<div class=\"$divclass$align\" $width>";
+
+		my $wikientry = $fpi->db->load_one('WikiEntry', name => $ref);
+
 		$r .= "<a href=\"./$ref\">"
-				if (defined($fpi->wikiobjects->{$ref}));
+			if (defined($wikientry));
 		$r .= $fpi->ImageTagFromInstance($imginst)
 			if defined($imginst);
 		$r .= "</a>"
-			if (defined($fpi->wikiobjects->{$ref}));
+			if (defined($wikientry));
 
 		$r .= "<div class=\"imagecaption\"><p class=\"imagecaption\">$desc</p></div>" if $desc ne '';
 		$r .= "</div>";
-	} elsif (defined($fpi->wikiobjects->{$ref})) {
-		my $wikientry = $fpi->wikiobjects->{$ref};
+	}
+	elsif (my $wikientry = $fpi->db->load_one('WikiEntry', name => $ref))
+	{
 		$r = "<a href=\"./".$wikientry->outputname.'">'
 			.HTML::Entities::encode($text)
 				.'</a>';
-		$wikientry->addReference($fpi->wikiobj);
-		$fpi->wikiobj->references->{$ref} = 1;
+		print $fpi->wikiobj->name." references ".$wikientry->name."\n"
+			if ($fpi->wikiobj->name eq 'MFS');
+		my $wer = $db->load_or_create('WikiEntryReference',
+									  from_id => $fpi->wikiobj->id,
+									  to_id => $wikientry->id);
+		print "  ".$wer->from_id." to ".$wer->to_id." with object ".$wer->id."\n"
+			if ($fpi->wikiobj->name eq 'MFS');
 	} else {
 		$r = '<i>'
 			.HTML::Entities::encode($text)
 				.'</i>';
-		$fpi->wikiobj->missingReferences->{$ref} = 1;
+		$fpi->wikiobj->_missingReferences->{$ref} = 1;
 	}
 
 	#	$text =~
@@ -318,10 +328,12 @@ sub TagDPL
 	my $text = '';
 
 	my $linkstoname = "Category:$attrs->{category}";
-	if (defined($fpi->wikiobjects->{$linkstoname}))
+	my $wikiobj = $fpi->db->load_one('WikiEntry', name => $linkstoname);
+	
+	if (defined($wikiobj))
 	{
-		my $wikiobj = $fpi->wikiobjects->{$linkstoname};
-		my @objs = @{$wikiobj->referencedBy};
+		my @objs = map {$db->load_one('WikiEntry', id => $_->from_id) }
+						$db->load('WikiEntryReference', to_id => $wikiobj->id);
 
 		if (defined($attrs->{pattern}))
 		{
@@ -808,15 +820,184 @@ sub CopyIfChanged($$@)
 }
 
 
+sub CopyWikiObjIfChanged($$)
+{
+	my ($fpi, $wikiobj) = @_;
+	$fpi->wikiobj($wikiobj);
+		
+	my $outputname = ConvertTextToWiki($wikiobj->name, 1);
+	my $stagingfile = "$stagingdir/$outputname".$fpi->suffix;
+	my $outputfile = "$outputdir/$outputname".$fpi->suffix;
+	
+	CopyIfChanged($outputfile, $stagingfile, 
+				  "$sourcedir/".$wikiobj->inputname);
+	if ($outputname =~ /^Category:/)
+	{
+		$stagingfile = "$stagingdir/$outputname.rss";
+		$outputfile = "$outputdir/$outputname.rss";
+		CopyIfChanged($outputfile, $stagingfile, 
+					  "$sourcedir/".$wikiobj->inputname);
+	}
+}
+
+sub DoRss($$)
+{
+	my ($fpi, $wikiobj) = @_;
+	my $wikiname = $wikiobj->name;
+	$fpi->wikiobj($wikiobj);
+	my $t = SingleFile("$sourcedir/".$wikiobj->inputname,$fpi);
+			
+			
+	my $rss = XML::RSS->new(version => '2.0');
+	$rss->channel
+		(
+		 title => "Flutterby.net: $1",
+		 link => "http://www.flutterby.net/".ConvertTextToWiki($wikiobj->name),
+		 language => 'en',
+		);
+			
+	my @refby = $wikiobj->referencedBy($db);
+	foreach my $refby (@refby)
+	{
+		$refby->initStatStuff();
+	}
+#		my @entries = sort {$b->mtime() <=> $a->mtime()} @refby;
+	my @entries = sort {$b->name() cmp $a->name()} @refby;
+	@entries = grep {$_->name =~ /^\d\d\d\d-\d\d-\d\d/} @entries
+		if ($wikiname =~ /life/);
+	for (my $i = 0; $i < 15 && $i < @entries; ++$i)
+	{
+		my $entry = $entries[$i];
+		my $fn = "$stagingdir/".$entry->outputname;
+		open(I, $fn)
+			|| die "Unable to open $fn for reading\n";
+		my $t = join('',<I>);
+		close I;
+		
+		$t =~ s/^.*?\<div\ class="content">//xsig;
+		$t =~ s%</div><div\ class="footer">.*$%%xsig;
+		$t =~ s%(href=)"./%$1"http://www.flutterby.net/%xsig;
+		$t =~ s%(src=)"./%$1"http://www.flutterby.net/%xsig;
+		$t =~ s%(href=)"/%$1"http://www.flutterby.net/%xsig;
+		$t =~ s%(src=)"/%$1"http://www.flutterby.net/%xsig;
+		
+		$rss->add_item(title => $entry->name,
+					   permaLink => 'http://www.flutterby.net/'.$entry->outputnameRoot.'.html',
+					   description => $t,
+					   dc => {date => email_date($entry->mtime())},
+			);
+		
+	}
+	my $savefilename = "$stagingdir/".$wikiobj->outputnameRoot.".rss";
+	$savefilename = $1 if ($savefilename =~ /^(.*)$/);
+	$rss->save($savefilename);
+}
+
+sub MarkWikiEntriesNeedingRebuildFromRefs($$)
+{
+	my ($db, $refs) = @_;
+	foreach my $ref (@$refs)
+	{
+		my $toobj = $db->load_one('WikiEntry', id => $ref->to_id);
+		$toobj->needsExternalRebuild(1);
+		$db->write($toobj);
+	}
+}
 
 
 
+sub DoWikiObj($$)
+{
+	my ($fpi, $wikiobj) = @_;
+	confess("Undefined fpi\n") unless defined($fpi);
+	confess("Undefined wikiobj\n") unless defined($wikiobj);
+	$fpi->wikiobj($wikiobj);
+		
+	my $t = SingleFile("$sourcedir/".$wikiobj->inputname,$fpi);
+		
+	my @nodes = Flutterby::Tree::Find::allNodes($t, 
+												{
+													'h1' => 1,
+													'h2' => 1,
+													'h3' => 1,
+													'h4' => 1,
+													'h5' => 1,
+													'h6' => 1,
+												});
+	my @subsections;
+	foreach my $node (@nodes) {
+		my $out = Flutterby::Output::Text->new();
+		my $t;
+		$out->setOutput(\$t);
+		$out->output($node->[1],1);
+		my $n = "$node->[0]:".ConvertTextToWiki($t);
+		push @subsections, [$node->[0], $t, $n];
+		splice @{$node->[1]}, 1, 0, 'a', [{name=>$n}];
+	}
+		
+	my @linkshere = sort {$a->name cmp $b->name} ($wikiobj->referencedBy($db));
+	
+	my $r = OutputTreeAsHTML($t,$wikiobj->name, $fpi, \@subsections, \@linkshere);
+	my $outfile = ConvertTextToWiki($wikiobj->name, 1);
+	my $fullpath = "$stagingdir/$outfile".$fpi->suffix;
+	$fullpath = $1 if ($fullpath =~ /^(.*)$/);
 
+	if (open O, ">$fullpath")
+	{
+		print O '<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"  "http://www.w3.org/TR/html4/loose.dtd">';
+		print O "\n";
+		print O $r;
+		close O;
+	}
+	else
+	{
+		warn "Unable to write to $fullpath\n";
+	}
+}
+
+
+sub DoDirtyFiles()
+{
+	ReadConfig();
+	my $fpi = FbyParserInfo->new(outputdir => $outputdir,
+								 db => $db,
+								 suffix => '.html');
+
+	my %allentries;
+	my @entries = $db->load('WikiEntry', needsContentRebuild => 1);
+
+	foreach my $wikiobj (@entries)
+	{
+		$allentries{$wikiobj->name} = $wikiobj;
+		print "Rebuilding ".$wikiobj->name."\n";
+		DoWikiObj($fpi, $wikiobj);
+		my @refs = $db->load('WikiEntryReference',
+							 from_id => $wikiobj->id);
+		MarkWikiEntriesNeedingRebuildFromRefs($db, \@refs);
+		$wikiobj->needsContentRebuild(0);
+		$db->write($wikiobj);
+	}
+	@entries = $db->load('WikiEntry', needsExternalRebuild => 1);
+
+	foreach my $wikiobj (@entries)
+	{
+		$allentries{$wikiobj->name} = $wikiobj;
+		print "Rebuilding external links for ".$wikiobj->name."\n";
+		DoWikiObj($fpi, $wikiobj);
+		$wikiobj->needsContentRebuild(0);
+		$db->write($wikiobj);
+	}
+	foreach my $wikiobj (values %allentries)
+	{
+		CopyWikiObjIfChanged($fpi,$wikiobj);
+	}
+}
 
 
 sub DoWikiFiles()
 {
 	ReadConfig();
+
 	opendir IN_DIR, $sourcedir
 		|| die "Unable to open directory '$sourcedir' for reading\n";
 
@@ -825,8 +1006,14 @@ sub DoWikiFiles()
 	{
 		if ($filename =~ /^(\w.*?).wiki$/)
 		{
-			my $wobj = WikiEntry->new(inputname => $filename);
-			$wikiobjects{$wobj->name} = $wobj;
+			my $wikiname = $1;
+			$wikiname =~ s/\s+/\ /xsg;
+			$wikiname =~ s/\:\s*/\:/xsg;
+			my $wobj = $db->load_or_create('WikiEntry',
+										   name => $wikiname);
+			$wobj->inputname($filename);
+			$db->write($wobj);
+#			$wikiobjects{$wobj->name} = $wobj;
 		}
 	}
 	
@@ -836,162 +1023,55 @@ sub DoWikiFiles()
 	
 	my $fpi = FbyParserInfo->new(outputdir => $outputdir,
 								 db => $db,
-								 wikiobjects => \%wikiobjects,
 								 suffix => '.html');
 	
+	print "FPI 1 is $fpi\n";
 	
 	my %missingpages;
-	
-	while (my ($wikiname, $wikiobj) = each %wikiobjects)
+
+	my @wikiobjects = $db->load('WikiEntry');
+
+	foreach my $wikiobj (@wikiobjects)
 	{
 		$fpi->wikiobj($wikiobj);
 		
 		
 		my $t = SingleFile("$sourcedir/".$wikiobj->inputname,$fpi);
 		
-		my @nodes = Flutterby::Tree::Find::allNodes($t,  
-													{
-														'h1' => 1,
-														'h2' => 1,
-														'h3' => 1,
-														'h4' => 1,
-														'h5' => 1,
-														'h6' => 1,
-													});
 		
-		foreach (keys %{$wikiobj->missingReferences})
+		foreach (keys %{$wikiobj->_missingReferences})
 		{
 			$missingpages{$_} = [] unless (defined($missingpages{$_}));
 			push @{$missingpages{$_}},$wikiobj;
 		}
-		
-		foreach (keys %{$wikiobj->references})
-		{
-			push @{$wikiobjects{$_}->referencedBy}, $wikiobj;
-		}
 	}
 	
-	
-	while (my ($wikiname, $wikiobj) = each %wikiobjects)
+		
+	print "FPI 2 is $fpi\n";
+
+	foreach my $wikiobj (@wikiobjects)
 	{
-		$fpi->wikiobj($wikiobj);
-		
-		my $t = SingleFile("$sourcedir/".$wikiobj->inputname,$fpi);
-		
-		my @nodes = Flutterby::Tree::Find::allNodes($t, 
-													{
-														'h1' => 1,
-														'h2' => 1,
-														'h3' => 1,
-														'h4' => 1,
-														'h5' => 1,
-														'h6' => 1,
-													});
-		my @subsections;
-		foreach my $node (@nodes) {
-			my $out = Flutterby::Output::Text->new();
-			my $t;
-			$out->setOutput(\$t);
-			$out->output($node->[1],1);
-			my $n = "$node->[0]:".ConvertTextToWiki($t);
-			push @subsections, [$node->[0], $t, $n];
-			splice @{$node->[1]}, 1, 0, 'a', [{name=>$n}];
-		}
-		
-		my @linkshere = sort {$a->name cmp $b->name} @{$wikiobj->referencedBy};
-		
-		my $r = OutputTreeAsHTML($t,$wikiobj->name, $fpi, \@subsections, \@linkshere);
-		my $outfile = ConvertTextToWiki($wikiobj->name, 1);
-		my $fullpath = "$stagingdir/$outfile".$fpi->suffix;
-		$fullpath = $1 if ($fullpath =~ /^(.*)$/);
-		if (open O, ">$fullpath")
-		{
-		    print O '<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"  "http://www.w3.org/TR/html4/loose.dtd">';
-		    print O "\n";
-		    print O $r;
-		    close O;
-		}
-		else
-		{
-		    warn "Unable to write to $fullpath\n";
-		}
+		DoWikiObj($fpi, $wikiobj);
 	}
 	
+	print "FPI 3 is $fpi\n";
 	
-	while (my ($wikiname, $wikiobj) = each %wikiobjects)
+	foreach my $wikiobj (@wikiobjects)
 	{
+		my $wikiname = $wikiobj->name;
 		$fpi->wikiobj($wikiobj);
 		
 		if ($wikiname =~ /^Category:\s*(.*)$/)
 		{
-			my $t = SingleFile("$sourcedir/".$wikiobj->inputname,$fpi);
-			
-			
-			my $rss = XML::RSS->new(version => '2.0');
-			$rss->channel
-				(
-				 title => "Flutterby.net: $1",
-				 link => "http://www.flutterby.net/".ConvertTextToWiki($wikiobj->name),
-				 language => 'en',
-				);
-			
-			my @refby = @{$wikiobj->referencedBy};
-			foreach my $refby (@refby)
-			{
-				$refby->initStatStuff();
-			}
-#		my @entries = sort {$b->mtime() <=> $a->mtime()} @refby;
-			my @entries = sort {$b->name() cmp $a->name()} @refby;
-			@entries = grep {$_->name =~ /^\d\d\d\d-\d\d-\d\d/} @entries
-				if ($wikiname =~ /life/);
-			for (my $i = 0; $i < 15 && $i < @entries; ++$i)
-			{
-				my $entry = $entries[$i];
-				my $fn = "$stagingdir/".$entry->outputname;
-				open(I, $fn)
-					|| die "Unable to open $fn for reading\n";
-				my $t = join('',<I>);
-				close I;
-				
-				$t =~ s/^.*?\<div\ class="content">//xsig;
-				$t =~ s%</div><div\ class="footer">.*$%%xsig;
-				$t =~ s%(href=)"./%$1"http://www.flutterby.net/%xsig;
-				$t =~ s%(src=)"./%$1"http://www.flutterby.net/%xsig;
-				$t =~ s%(href=)"/%$1"http://www.flutterby.net/%xsig;
-				$t =~ s%(src=)"/%$1"http://www.flutterby.net/%xsig;
-				
-				$rss->add_item(title => $entry->name,
-							   permaLink => 'http://www.flutterby.net/'.$entry->outputnameRoot.'.html',
-							   description => $t,
-							   dc => {date => email_date($entry->mtime())},
-					);
-				
-			}
-			my $savefilename = "$stagingdir/".$wikiobj->outputnameRoot.".rss";
-			$savefilename = $1 if ($savefilename =~ /^(.*)$/);
-			$rss->save($savefilename);
+			DoRss($fpi, $wikiobj);
 		}
 	}
 	
 	
 	
-	while (my ($wikiname, $wikiobj) = each %wikiobjects)
+	foreach my $wikiobj (@wikiobjects)
 	{
-		$fpi->wikiobj($wikiobj);
-		
-		my $outputname = ConvertTextToWiki($wikiobj->name, 1);
-		my $stagingfile = "$stagingdir/$outputname".$fpi->suffix;
-		my $outputfile = "$outputdir/$outputname".$fpi->suffix;
-		
-		CopyIfChanged($outputfile, $stagingfile, 
-					  "$sourcedir/".$wikiobj->inputname);
-		if ($outputname =~ /^Category:/)
-		{
-			$stagingfile = "$stagingdir/$outputname.rss";
-			$outputfile = "$outputdir/$outputname.rss";
-			CopyIfChanged($outputfile, $stagingfile, 
-						  "$sourcedir/".$wikiobj->inputname);
-		}
+		CopyWikiObjIfChanged($fpi, $wikiobj);
 	}
 	
 	
@@ -1030,11 +1110,12 @@ sub GetWikiFiles()
 }
 
 
+
 sub WriteWikiFile()
 {
 	my ($wikifile) = @_;
 	ReadConfig();
-	$wikifile = $1 if ($wikifile =~ /^(.*)$/);
+	$wikifile = $1 if ($wikifile =~ s/[><\/\\]//g);
 	open(OUT, ">$sourcedir/$wikifile.wiki")
 		|| die "Unable to open $sourcedir/$wikifile.wiki for writing\n";
 
@@ -1043,6 +1124,16 @@ sub WriteWikiFile()
 		print OUT $_;
 	}
 	close OUT;
+
+	my $wobj = $db->load_or_create('WikiEntry',
+								   name => $wikifile);
+	$wobj->needsContentRebuild(1);
+	$wobj->inputname("$wikifile.wiki");
+	my @refs = $db->load('WikiEntryReference',
+						 from_id => $wobj->id);
+	MarkWikiEntriesNeedingRebuildFromRefs($db, \@refs);
+	$db->write($wobj);
+	$db->delete('WikiEntryReference', from_id => $wobj->id);
 }
 
 sub ReadWikiFile()
@@ -1192,7 +1283,7 @@ sub ImportKML()
 
 == KML $dirnum ==
 
-Here's <a href="$kmlpath/GPSLog.kmz"</a>the KMZ for $isoday $dirnum</a>,
+Here is <a href="$kmlpath/GPSLog.kmz"</a>the KMZ for $isoday $dirnum</a>,
 centered at lat=$lat lon=$lon, KML is at $kmlpath/GPSLog.kml
 			
 <googlemap version="0.9" lat="$lat" lon="$lon" zoom="12">
@@ -1207,6 +1298,24 @@ $wikikmlfile = $1 if $wikikmlfile =~ /^(.*)$/;
 		print O "$newt$t";
 		close O;
     }
+}
+
+
+
+
+sub commands()
+{
+	return 
+	{
+	 'doeverything' => \&Fby::DoEverything,
+	 'dowikifiles' => \&Fby::DoWikiFiles,
+	 'getwikifiles' => \&Fby::GetWikiFiles,
+	 'writewikifile' => \&Fby::WriteWikiFile,
+	 'readwikifile' => \&Fby::ReadWikiFile,
+	 'rebuilddetached' => \&Fby::RebuildDetached,
+	 'importkml' => \&Fby::ImportKML,
+	 'dodirtyfiles' => \&Fby::DoDirtyFiles,
+	};
 }
 
 

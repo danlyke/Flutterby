@@ -66,7 +66,7 @@ sub _sortinstances
 {
 	my ($self,$db) = @_;
 	my @instsunsorted = $self->instances($db);
-	my @insts = sort { $a->dimensions->[0] <=> $b->dimensions->[0] } @instsunsorted;
+	my @insts = sort { $b->dimensions->[0] <=> $a->dimensions->[0] } @instsunsorted;
 	return @insts;
 }
 
@@ -89,15 +89,24 @@ no Moose;
 __PACKAGE__->meta->make_immutable;
 
 
+package WikiEntryReference;
+use Moose;
+has id => (is => 'rw', isa => 'Int');
+has from_id => (is => 'rw', isa => 'Int');
+has to_id => (is => 'rw', isa => 'Int');
+
+no Moose;
+__PACKAGE__->meta->make_immutable;
+
 
 package WikiEntry;
 use Moose;
 has 'id' => (is => 'rw', isa => 'Int');
 has inputname => (is => 'rw', type => 'Str');
-has referencedBy => (is => 'rw', default => sub { [] });
-has references => (is => 'rw', default => sub { {} });
-has missingReferences => (is => 'rw', default => sub { {} });
+has name => (is => 'rw', type => 'Str');
+has _missingReferences => (is => 'rw', default => sub { {} });
 has needsExternalRebuild => (is => 'rw', type => 'Int');
+has needsContentRebuild => (is => 'rw', type => 'Int');
 
 has _mtime => (is => 'rw', type => 'Int');
 has _ctime => (is => 'rw', type => 'Int');
@@ -134,7 +143,23 @@ sub size()
 }
 
 
+sub referencedBy()
+{
+	my ($self,$db) = @_;
 
+	my @a = $db->load('WikiEntryReference', to_id => $self->id);
+
+	if ($self->name eq 'MFS')
+	{
+		print "Loaded: ", join(',', @a)," to_id is ".$self->id."\n";
+	}
+	my @b;
+	foreach (@a)
+	{
+		push @b, $db->load('WikiEntry', id => $_->from_id);
+	}
+	return @b;
+}
 
 
 sub addReference
