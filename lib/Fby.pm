@@ -1321,3 +1321,56 @@ sub commands()
 
 1;
 
+=head1 NAME
+
+Fby - The interface to the Flutterby.net wiki system
+
+=head1 SYNOPSIS
+
+Right now this is just a dumbing ground for the actual contents of a
+script that does some SUID stuff and then calls the functions
+retrieved from the hash returned by the Fby::commands subroutine.
+
+=head1 DESCRIPTION
+
+Available commands:
+
+=head2 &{Fby::commands->{'doeverything'}}()
+
+Find all image files, make sure they have .wiki files, and then
+rebuild the wiki files. This is a great function to have but should
+eventually go away as the system gets smarter.
+
+=head2 &{Fby::commands->{'dowikifiles'}()
+
+Rebuild all of the wiki files, but don't do the image scan.
+
+=head2 &{Fby::commands->{'getwikifiles'}()
+
+Get a list of all of the wiki files
+
+=head2 &{Fby::commands->{'writewikifile'}('Wiki entry name')
+
+Write an individual wiki file from STDIN to the wiki file repository.
+
+=head2 &{Fby::commands->{'readwikifile'}('Wiki entry name')
+
+Read an individual wiki file from STDIN from the wiki file repository.
+
+=head2 &{Fby::commands->{'rebuilddetached'}()
+
+Respawn './bin/fby.pl dowikifiles' as an setsid detached process.
+
+=head2 &{Fby::commands->{'importkml'}('subject', 'categories', 'directory')
+
+Import a KML file, creating a 'YYYY-MM-DD subject' Wiki file
+referencing the comma separated categories listed, and an embedded
+Google map.
+
+'directory' is where to find the KML file.
+
+=head2 &{Fby::commands->{'dodirtyfiles'}()
+
+Just rebuild the files that have been marked dirty, right now just by
+'writewikifile'.
+
