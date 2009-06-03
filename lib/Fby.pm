@@ -388,7 +388,7 @@ sub TagGooglemap()
 	
 	my $r;
 
-	unless (defined($fpi->googlemapnum)) {
+	unless ($fpi->googlemapnum) {
 		$fpi->googlemapnum(0);
 		$r = <<EOF;
 <script src="http://maps.google.com/maps?file=api&amp;v=2&amp;key=ABQIAAAA5bnmoyI0qgIhAMohxYIDGRRnstFjj-VwPFW1Yamy-XfT3YF74RTtTIkyyd_WArVu_AjLpZ6ovlzZPw&amp;hl=en" type="text/javascript"></script>
@@ -912,6 +912,7 @@ sub DoWikiObj($$)
 	confess("Undefined fpi\n") unless defined($fpi);
 	confess("Undefined wikiobj\n") unless defined($wikiobj);
 	$fpi->wikiobj($wikiobj);
+	$fpi->googlemapnum(0);
 		
 	my $t = SingleFile("$sourcedir/".$wikiobj->inputname,$fpi);
 		
@@ -1034,6 +1035,7 @@ sub DoWikiFiles()
 	foreach my $wikiobj (@wikiobjects)
 	{
 		$fpi->wikiobj($wikiobj);
+		$fpi->googlemapnum(0);
 		
 		
 		my $t = SingleFile("$sourcedir/".$wikiobj->inputname,$fpi);
@@ -1060,6 +1062,7 @@ sub DoWikiFiles()
 	{
 		my $wikiname = $wikiobj->name;
 		$fpi->wikiobj($wikiobj);
+		$fpi->googlemapnum(0);
 		
 		if ($wikiname =~ /^Category:\s*(.*)$/)
 		{
