@@ -223,6 +223,13 @@ sub ConvertTextToWiki($@)
 	return $t;
 }
 
+sub OutputNameToLinkName($)
+{
+	my ($n) = @_;
+	$n =~ s/\.html$//;
+	return $n;
+}
+
 
 sub TagWiki()
 {
@@ -296,7 +303,7 @@ sub TagWiki()
 	}
 	elsif (my $wikientry = $fpi->db->load_one('WikiEntry', name => $ref))
 	{
-		$r = "<a href=\"./".$wikientry->outputname.'">'
+		$r = '<a href="./'.OutputNameToLinkName($wikientry->outputname).'">'
 			.HTML::Entities::encode($text)
 				.'</a>';
 		print $fpi->wikiobj->name." references ".$wikientry->name."\n"
