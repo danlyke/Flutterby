@@ -1,7 +1,8 @@
 #!/usr/bin/perl -w
 use strict;
 package Flutterby::Tree::Find;
-
+use Carp;
+$Carp::Verbose = $1;
 
 sub findClassArrayRecurse($$$)
 {
@@ -82,18 +83,24 @@ sub findNodeFirstRecurse($$)
     my ($tree, $tag) = @_;
     my ($start);
     $start = 0;
+    confess "Malformed tree $tree\n" unless ref($tree);
     $start++ if (ref($tree->[0]));
 
-    for (; $start < $#$tree; $start += 2) {
-		if ($tree->[$start] ne '0') {
-			if ($tree->[$start] eq $tag) {
-				return [$tree->[$start], $tree->[$start + 1]];
-			} else {
-				my ($r);
-				$r = &findNodeFirstRecurse($tree->[$start + 1],$tag,$r);
-				return $r if defined($r);
-			}
-		}
+    for (; $start < $#$tree; $start += 2)
+    {
+        if ($tree->[$start] ne '0')
+        {
+            if ($tree->[$start] eq $tag)
+            {
+                return [$tree->[$start], $tree->[$start + 1]];
+            }
+            else
+            {
+                my ($r);
+                $r = &findNodeFirstRecurse($tree->[$start + 1],$tag,$r);
+                return $r if defined($r);
+            }
+        }
     }
     return undef;
 }

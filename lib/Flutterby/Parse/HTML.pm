@@ -1,10 +1,11 @@
 #!/usr/bin/perl -w
 use strict;
+use warnings;
+
 package Flutterby::Parse::HTML;
 # use Flutterby::Parse::TreeBuild;
 use Flutterby::Parse::HTMLUtil;
 use HTML::Entities;
-
 
 sub MyDecodeEntities
 {
@@ -73,7 +74,7 @@ sub flutterby_end_parse
 
     $errmsg = "The following tags have non-zero ref counts:\n";
     $tagrefcount = $self->{-tagrefcount};
-    foreach (keys %$tagrefcount) {
+    for (keys %$tagrefcount) {
 		$errors .= $errmsg;
 		$errmsg = '';
 		$errors .= "  $_ - $tagrefcount->{$_}\n";
@@ -118,8 +119,11 @@ sub parse
     my ($charblock);
     while ($charblock = shift @_) {
 		while ($charblock =~ s/^(.*?)\<(((\/?)([a-z][\w\:]*)(\s*|.*?\"\s*|[^\<]*)\/?\>)
-							   |(\!)\-\-\s+(.*?)\s+-\-\>)//xsi) {
-			if (defined($7) && $7 eq '!') {
+							   |(\!)\-\-\s+(.*?)\s+-\-\>|(\!\[CDATA\[.*?\]\]\>))//xsi) {
+            if (defined($9)) {
+				$self->text($1) if (defined($1) && $1 ne '');
+                $self->text("<$9");
+            } elsif (defined($7) && $7 eq '!') {
 				$self->text($1) if (defined($1) && $1 ne '');
 				if (defined($self->{-parsecommentbody})) {
 					$self->start('!', {});
@@ -148,10 +152,14 @@ sub parse
 				$tagname = lc($tagname) unless $tagname =~ /\:/;
 				$self->text($pre) if (defined($pre) && $pre ne '');
 				if ((!defined($allowedtagsubset))
-					|| $allowedtagsubset->{$tagname}) {
-					if (defined($tagclose) && $tagclose ne '') {
+					|| $allowedtagsubset->{$tagname})
+				{
+					if (defined($tagclose) && $tagclose ne '')
+					{
 						$self->end($tagname);
-					} else {
+					}
+					else
+					{
 						my (%attrs);
 						while (($attrs =~ s/^\s*([a-z]+[\:\w]*)\s*\=\s*\"(.*?)\"\s*//si)
 							   || ($attrs =~ s/^\s*([a-z]+[\:\w]*)\s*\=\s*\'(.*?)\'\s*//si)
@@ -161,7 +169,7 @@ sub parse
 							my ($k, $v) = ($1,$2);
 							$v = '1' unless defined($v);
 							$k = lc($k) unless $k =~ /\:/;
-							$attrs{$k} = MyDecodeEntities($v);
+                            $attrs{$k} = MyDecodeEntities($v);
 						}
 						$self->start($tagname, \%attrs);
 					}
