@@ -8,16 +8,16 @@ sub new()
     my ($type,%args) = @_;
     my $class = ref($type) || $type;
     my ($self) = 
-	{
-	 -outputfunc => \&sendToOutput,
-	};
+    {
+     -outputfunc => \&sendToOutput,
+    };
     foreach (keys %args) {
-		$self->{$_} = $args{$_}
-			if (defined({
-						 -numberlinks => 1,
-						 -outputfunc => 1,
-						}->{$_}));
-	}
+        $self->{$_} = $args{$_}
+            if (defined({
+                         -numberlinks => 1,
+                         -outputfunc => 1,
+                        }->{$_}));
+    }
     $self->{-linkurls} = [] if (defined($self->{-numberlinks}));
 
     return bless($self, $class);
@@ -47,11 +47,11 @@ sub sendToOutput()
     my ($r) = $self->{-outputdest};
     
     if (ref($r) eq 'GLOB') {
-		print {*$r} $t;
+        print {*$r} $t;
     } elsif (ref($r) eq 'SCALAR') {
-		$$r .= $t;
+        $$r .= $t;
     } else {
-		print $t;
+        print $t;
     }
 }
 
@@ -62,8 +62,8 @@ sub outputChildren
     my ($outputfunc) = $self->{-outputfunc};
     unless (ref($childinfo))
     {
-		&$outputfunc($self,$childinfo);
-		return;
+        &$outputfunc($self,$childinfo);
+        return;
     }
     
     $start = 0;
@@ -71,19 +71,19 @@ sub outputChildren
 
     my ($i);
     for ($i = $start; $i <= $#$childinfo; $i += 2) {
-		if ($childinfo->[$i] eq '0') {	    
-			&$outputfunc($self,$childinfo->[$i + 1]);
-		} elsif ($childinfo->[$i] eq '!') {
-		} else {
-			$self->outputChildren($childinfo->[$i+1]);
-			if ($childinfo->[$i] eq 'a' 
-				&& defined($childinfo->[$i+1]->[0]->{'href'})
-				&& defined($self->{-numberlinks})) {
-				&$outputfunc($self,"\[$self->{-numberlinks}\]");
-				$self->{-numberlinks}++;		
-				push @{$self->{-linkurls}}, $childinfo->[$i+1]->[0]->{'href'};
-			}
-		}
+        if ($childinfo->[$i] eq '0') {	    
+            &$outputfunc($self,$childinfo->[$i + 1]);
+        } elsif ($childinfo->[$i] eq '!') {
+        } else {
+            $self->outputChildren($childinfo->[$i+1]);
+            if ($childinfo->[$i] eq 'a' 
+                && defined($childinfo->[$i+1]->[0]->{'href'})
+                && defined($self->{-numberlinks})) {
+                &$outputfunc($self,"\[$self->{-numberlinks}\]");
+                $self->{-numberlinks}++;		
+                push @{$self->{-linkurls}}, $childinfo->[$i+1]->[0]->{'href'};
+            }
+        }
     }
 }
 
@@ -92,7 +92,7 @@ sub output
 {
     my ($self, $childinfo) = @_;
     $self->outputChildren($childinfo);
-	#    $self->outputLeaf($tree->[0], $tree->[1]);
+    #    $self->outputLeaf($tree->[0], $tree->[1]);
 }
 
 1;

@@ -1,8 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 package Flutterby::Tree::Find;
-use Carp;
-$Carp::Verbose = $1;
+
 
 sub findClassArrayRecurse($$$)
 {
@@ -12,14 +11,14 @@ sub findClassArrayRecurse($$$)
     $start++ if (ref($tree->[0]));
 
     for (; $start < $#$tree; $start += 2) {
-		if ($tree->[$start] ne '0') {
-			if (defined($tree->[$start + 1]->[0]->{'class'})
-				&& " $tree->[$start + 1]->[0]->{'class'} " =~ /\s$tag\s/xs) {
-				push @$r, [$tree->[$start], $tree->[$start + 1]];
-			} else {
-				&findClassArrayRecurse($tree->[$start + 1],$tag,$r);
-			}
-		}
+        if ($tree->[$start] ne '0') {
+            if (defined($tree->[$start + 1]->[0]->{'class'})
+                && " $tree->[$start + 1]->[0]->{'class'} " =~ /\s$tag\s/xs) {
+                push @$r, [$tree->[$start], $tree->[$start + 1]];
+            } else {
+                &findClassArrayRecurse($tree->[$start + 1],$tag,$r);
+            }
+        }
     }
 }
 
@@ -31,16 +30,16 @@ sub findClassFirstRecurse($$)
     $start++ if (ref($tree->[0]));
 
     for (; $start < $#$tree; $start += 2) {
-		if ($tree->[$start] ne '0') {
-			if (defined($tree->[$start + 1]->[0]->{'class'})
-				&& " $tree->[$start + 1]->[0]->{'class'} " =~ /\s$tag\s/xs) {
-				return [$tree->[$start], $tree->[$start + 1]];
-			} else {
-				my ($r);
-				$r = &findClassFirstRecurse($tree->[$start + 1],$tag,$r);
-				return $r if defined($r);
-			}
-		}
+        if ($tree->[$start] ne '0') {
+            if (defined($tree->[$start + 1]->[0]->{'class'})
+                && " $tree->[$start + 1]->[0]->{'class'} " =~ /\s$tag\s/xs) {
+                return [$tree->[$start], $tree->[$start + 1]];
+            } else {
+                my ($r);
+                $r = &findClassFirstRecurse($tree->[$start + 1],$tag,$r);
+                return $r if defined($r);
+            }
+        }
     }
     return undef;
 }
@@ -51,12 +50,12 @@ sub class($$)
     $tag =~ s/(\W)/\\$1/xsg;
 
     if (wantarray) {
-		my ($r);
-		$r = [];
-		findClassArrayRecurse($tree,$tag,$r);
-		return @$r;
+        my ($r);
+        $r = [];
+        findClassArrayRecurse($tree,$tag,$r);
+        return @$r;
     } else {
-		return findClassFirstRecurse($tree, $tag);
+        return findClassFirstRecurse($tree, $tag);
     }
 }
 
@@ -68,13 +67,13 @@ sub findNodeArrayRecurse($$$)
     $start++ if (ref($tree->[0]));
 
     for (; $start < $#$tree; $start += 2) {
-		if ($tree->[$start] ne '0') {
-			if ($tree->[$start] eq $tag) {
-				push @$r, [$tree->[$start], $tree->[$start + 1]];
-			} else {
-				&findNodeArrayRecurse($tree->[$start + 1],$tag,$r);
-			}
-		}
+        if ($tree->[$start] ne '0') {
+            if ($tree->[$start] eq $tag) {
+                push @$r, [$tree->[$start], $tree->[$start + 1]];
+            } else {
+                &findNodeArrayRecurse($tree->[$start + 1],$tag,$r);
+            }
+        }
     }
 }
 
@@ -83,19 +82,13 @@ sub findNodeFirstRecurse($$)
     my ($tree, $tag) = @_;
     my ($start);
     $start = 0;
-    confess "Malformed tree $tree\n" unless ref($tree);
     $start++ if (ref($tree->[0]));
 
-    for (; $start < $#$tree; $start += 2)
-    {
-        if ($tree->[$start] ne '0')
-        {
-            if ($tree->[$start] eq $tag)
-            {
+    for (; $start < $#$tree; $start += 2) {
+        if ($tree->[$start] ne '0') {
+            if ($tree->[$start] eq $tag) {
                 return [$tree->[$start], $tree->[$start + 1]];
-            }
-            else
-            {
+            } else {
                 my ($r);
                 $r = &findNodeFirstRecurse($tree->[$start + 1],$tag,$r);
                 return $r if defined($r);
@@ -111,12 +104,12 @@ sub node($$)
 
 
     if (wantarray) {
-		my ($r);
-		$r = [];
-		findNodeArrayRecurse($tree,$tag,$r);
-		return @$r;
+        my ($r);
+        $r = [];
+        findNodeArrayRecurse($tree,$tag,$r);
+        return @$r;
     } else {
-		return findNodeFirstRecurse($tree, $tag);
+        return findNodeFirstRecurse($tree, $tag);
     }
 }
 
@@ -127,18 +120,18 @@ sub nodeChildInfo($$@)
     my ($r);
 
     if (!defined($start)) {
-		$start = 0;
-		$start++ if (ref($tree->[0]));
+        $start = 0;
+        $start++ if (ref($tree->[0]));
     }
 
     for (; $start < $#$tree; $start += 2) {
-		if ($tag eq $tree->[$start]) {
-			$r = $tree->[$start + 1];
-		} elsif ($tree->[$start] ne '0') {
-			$r = &nodeChildInfo($tree->[$start + 1],$tag, 1);
-		}
-		return $r if ($r);
-	}
+        if ($tag eq $tree->[$start]) {
+            $r = $tree->[$start + 1];
+        } elsif ($tree->[$start] ne '0') {
+            $r = &nodeChildInfo($tree->[$start + 1],$tag, 1);
+        }
+        return $r if ($r);
+    }
     return undef;
 }
 
@@ -149,22 +142,13 @@ sub allNodes($$@)
     $ret = [] unless defined($ret);
     $start = 0 unless defined($start);
 
-    for (; $start < $#$tree; $start += 2)
-	{
-		if (ref($tag) eq 'HASH' && defined($tag->{$tree->[$start]}))
-		{	
-			push @$ret, [$tree->[$start], $tree->[$start + 1]];
-		}
-		elsif (($tag eq $tree->[$start]))
-		{
-			push @$ret, $tree->[$start + 1];
-		}
-		elsif ($tree->[$start] ne '0')
-		{
-			&allNodes($tree->[$start + 1],$tag, 1,$ret);
-		}
-	}
-	return @$ret if (wantarray);
+    for (; $start < $#$tree; $start += 2) {
+        if ($tag eq $tree->[$start]) {
+            push @$ret, $tree->[$start + 1];
+        } elsif ($tree->[$start] ne '0') {
+            &allNodes($tree->[$start + 1],$tag, 1,$ret);
+        }
+    }
     return $ret;
 }
 1;

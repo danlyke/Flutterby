@@ -11,18 +11,10 @@ sub new
     my ($type,%args) = @_;
     my $class = ref($type) || $type;
 
-    my $self = {
-				-textglossary => {},
-				-specialtags => {},
-			   };
-	foreach my $arg ('-wiki', '-specialtags', '-callbackobj')
-	{
-		$self->{$arg} = $args{$arg}
-			if (defined($args{$arg}));
-	}
+    my $self = {-textglossary => {}};
 
     $self->{-htmlparser} = new Flutterby::Parse::HTML(%args,
-													  -allowalltags => 1);
+                                                      -allowalltags => 1);
     return bless($self, $class);
 }
 
@@ -35,128 +27,74 @@ sub FormatString($@)
     my ($outfunc) = $self->{-outfunc};
 
     while ($text = shift) {
-		$text =~ s/\</\&lt\;/sg;
-		$text =~ s/\>/\&gt\;/sg;
-		while ($text =~ s/^(.*?\&)//s) {
-			$self->{-htmlparser}->parse($1);
-			$self->{-htmlparser}->parse('amp;') unless ($text =~ /^(\w+|\#\d+);/);
-		}
-		$self->{-htmlparser}->parse($text);
-	}
+        $text =~ s/\</\&lt\;/sg;
+        $text =~ s/\>/\&gt\;/sg;
+        while ($text =~ s/^(.*?\&)//s) {
+            $self->{-htmlparser}->parse($1);
+            $self->{-htmlparser}->parse('amp;') unless ($text =~ /^(\w+|\#\d+);/);
+        }
+        $self->{-htmlparser}->parse($text);
+    }
 }
 
 sub AddOutputLink($$$)
 {
     my ($self,$text,$url) = @_;
-
-	$text = '*' unless defined($text);
-
     my ($outfunc) = $self->{-outfunc};
     my ($tagcount,$tagstack);
     $tagstack = $self->{-tagstack};
     $tagcount = $self->{-tagcount};
     if ($tagcount->{'a'}) {
-		$self->{-htmlparser}->parse('<cite>');
-		FormatString($self,$text);
-		$self->{-htmlparser}->parse('</cite>');
-	} else {
-		$self->{-htmlparser}->parse("<a href=\"$url\">");
-		FormatString($self,$text);
-		$self->{-htmlparser}->parse('</a>');
-	}
+        $self->{-htmlparser}->parse('<cite>');
+        FormatString($self,$text);
+        $self->{-htmlparser}->parse('</cite>');
+    } else {
+        $self->{-htmlparser}->parse("<a href=\"$url\">");
+        FormatString($self,$text);
+        $self->{-htmlparser}->parse('</a>');
+    }
 }
 
-sub UnderlinedText($$)
+sub FindInGlossary($$)
 {
     my ($self,$text) = @_;
     my ($outfunc) = $self->{-outfunc};
-	$self->{-htmlparser}->parse('<cite>');
-	FormatString($self,$text);
-	$text =~ s/\s+/ /g;
-	$text =~ s/\&/%26/g;
-	$self->{-htmlparser}->parse('</cite>');
+    if (defined($self->{-textglossary}->{$text})) {
+        $self->{-htmlparser}->parse("<a href=\"$self->{-textglossary}->{$text}\">");
+        FormatString($self,$text);
+        $self->{-htmlparser}->parse("</a>");
+    } else {
+        $self->{-htmlparser}->parse('<cite>');
+        FormatString($self,$text);
+        $text =~ s/\s+/ /g;
+        $text =~ s/\&/%26/g;
+        $self->{-htmlparser}->parse('<a href="/wiki/'
+                                    .HTML::Entities::encode($text).
+                                    '"><img border="0" src="/adbanners/lookingglass.png" alt="[Wiki]" width="12" height="12"></a>');
+        $self->{-htmlparser}->parse('</cite>');
+    }
 }
-
 sub MatchURLsForLinks($$)
 {
     my ($self,$text) = @_;
     while ($text =~ s/^(.*?|.*?[^""])((https?|ftp):[^"\)\s ]*[^",.\)\s ])//sg) {
-		FormatString($self, $1);
-		my ($l, $t);
-		$l = $2;
-		$t = $2;
+        FormatString($self, $1);
+        my ($l, $t);
+        $l = $2;
+        $t = $2;
 
-		$t = substr($l,0,30).'...'.substr($l,-32)
-			if (length($t) > 64);
-		AddOutputLink($self,$t,$l);
+        $t = substr($l,0,30).'...'.substr($l,-32)
+            if (length($t) > 64);
+        AddOutputLink($self,$t,$l);
     }
     FormatString($self,$text);
-}
-
-sub LookForMediawikiMarkup($$)
-{
-	my ($self, $text) = @_;
-
-	while ($text =~ s/^(.*?)\[(
-						        (\[(.*?)\])|
-								(((https?|ftp):.*?)\s+(.*?))
-					          )\]//xsg)
-	{
-		MatchURLsForLinks($self, $1);
-		if (defined($4))
-		{
-			my $wikiterm = $4;
-			my $wikitext;
-			$wikitext = $1 if ($wikiterm =~ s/\|\s*(.*?)\s*$//sg);
-
-			OutputWikiString($self, $wikiterm, $wikitext);
-		}
-		elsif (defined($5))
-		{
-			AddOutputLink($self, $8, $6);
-		}
-
-	}
-	MatchURLsForLinks($self,$text);
 }
 
 sub AddToGlossary($$$)
 {
     my ($self, $ref, $url) = @_;
     $self->{-textglossary}->{$ref} = $url
-		if (defined($ref) && defined($url));
-}
-
-sub OutputWikiString($$$)
-{
-	my ($self, $ref, $url) = @_;
-	if (defined($self->{-wiki}))
-	{
-		my @args = ($ref, $url);
-		unshift (@args, $self->{-callbackobj}) if defined($self->{-callbackobj});
-		$self->{-htmlparser}->text(&{$self->{-wiki}}(@args));
-	}
-	else
-	{
-		FormatString($self,$ref);
-		$self->{-htmlparser}->parse('<a href="/wiki/'
-									.HTML::Entities::encode($3).
-									'"><img border="0" src="/adbanners/lookingglass.png" alt="[Wiki]" width="12" height="12"></a>');
-	}
-}
-
-sub OutputPosition($$$)
-{
-	my ($self, $ref, $url) = @_;
-	if (defined($self->{-wiki}))
-	{
-	}
-	else
-	{
-		$self->{-htmlparser}->parse('<a href="/archives/mapit.cgi?pos='
-									.HTML::Entities::encode($3).
-									'"><img border="0" src="/adbanners/compass.png" alt="[Map]" width="12" height="12"></a>');
-	}
+        if (defined($ref) && defined($url));
 }
 
 sub FormatChunk($@)
@@ -165,33 +103,48 @@ sub FormatChunk($@)
 
     my ($text);
     while ($text = shift) {
+        while ($text =~ s/^(|.*?\s)_(\w|[\w\'\"][^_]*?[\w\'\"\?\!\)])_\s*
+                          ((|\'s|[\(\,\.\?\:\;\!])(|[\s\(].*))$/$3/xsi) {
+            MatchURLsForLinks($self,$1);
+            my ($ref);
+            $ref = $2;
+            if ($text =~ s/^\s*\(((https?|ftp|wiki|position|address)\:(.*?))\)((|\'s|[\,\.\?\:\;\!])(\s.*|))$/$4/xsi) {
+                if ($2 eq 'wiki') {
+                    $self->{-htmlparser}->parse('<cite>');
+                    FormatString($self,$ref);
+                    $self->{-htmlparser}->parse('<a href="/wiki/'
+                                                .HTML::Entities::encode($3).
+                                                '"><img border="0" src="/adbanners/lookingglass.png" alt="[Wiki]" width="12" height="12"></a>');
+                    $self->{-htmlparser}->parse('</cite>');
 
-		while ($text =~ s/^(|.*?\s)_(\w|[\w\'\"][^_]*?[\w\'\"\?\!\)])_\s*
-						  ((|\'s|[\(\,\.\?\:\;\!])(|[\s\(].*))$/$3/xsi) {
-			LookForMediawikiMarkup($self, $1);
-			my ($ref);
-			$ref = $2;
-			if ($text =~ s/^\s*\(((https?|ftp|wiki|position)\:(.*?))\)((|\'s|[\,\.\?\:\;\!])(\s.*|))$/$4/xsi) {
-				if ($2 eq 'wiki') {
-					$self->{-htmlparser}->parse('<cite>');
-					OutputWikiString($self, $ref, $3);
+                } elsif ($2 eq 'position') {
+                    FormatString($self,$ref);
+                    my $addr = $ref;
 
-					$self->{-htmlparser}->parse('</cite>');
+                    $addr = $3 if (defined($3) && $3 ne '');
 
-				} elsif ($2 eq 'position') {
-					FormatString($self,$ref);
-					my $addr = $ref;
-					$addr = $3 if (defined($3) && $3 ne '');
-					OutputPosition($self, $ref, $addr);
-				} else {
-					AddOutputLink($self,$ref,$1);
-				}
-			} else {
-				UnderlinedText($self,$ref);
-			}
-		}
-		LookForMediawikiMarkup($self, $text);
-	}
+                    $self->{-htmlparser}->parse('<a href="/archives/mapit.cgi?pos='
+                                                .HTML::Entities::encode($3).
+                                                '"><img border="0" src="/adbanners/compass.png" alt="[Map]" width="12" height="12"></a>');
+                } elsif ($2 eq 'address') {
+                    FormatString($self,$ref);
+                    my $addr = $ref;
+
+                    $addr = $3 if (defined($3) && $3 ne '');
+
+                    $self->{-htmlparser}->parse('<a href="/archives/mapit.cgi?addr='
+                                                .HTML::Entities::encode($3).
+                                                '"><img border="0" src="/adbanners/compass.png" alt="[Map]" width="12" height="12"></a>');
+                } else {
+                    #		AddToGlossary($self,$ref,$1);
+                    AddOutputLink($self,$ref,$1);
+                }
+            } else {
+                FindInGlossary($self,$ref);
+            }
+        }
+        MatchURLsForLinks($self,$text);
+    }
 }
 
 
@@ -201,62 +154,42 @@ sub FormatParagraph
 
     my ($outfunc) = $self->{-outfunc};
     my ($tagstack, $tagcount);
-    my $userAllowedTagSubset =
-		Flutterby::Parse::HTMLUtil::userAllowedTagHashref();
+    my ($userAllowedTagSubset);
+    $userAllowedTagSubset = 
+        Flutterby::Parse::HTMLUtil::userAllowedTagHashref();
 
     $tagstack = $self->{-tagstack};
     $tagcount = $self->{-tagcount};
 
     $text =~ s/[\x00-\x08\x0b\x0c\x0e-\x1f]//g;
     while ($text =~ /^(.*?)([\x80-\xff])(.*)$/) {
-		$text = sprintf('%s&#%d;%s', $1,ord($2),$3);
+        $text = sprintf('%s&#%d;%s', $1,ord($2),$3);
     }
 
     while ($text =~ s/^(.*?)\<(\/?)([a-z]\w*)(.*?)\>//si) {
-		my ($pre, $close, $tag, $attrs) = ($1,$2,lc($3),$4);
-		my ($tagcontents);
+        my ($pre, $close, $tag, $attrs) = ($1,$2,lc($3),$4);
+        my ($tagcontents);
 
-		# do stuff to $pre
-		$self->FormatChunk($pre);
+        # do stuff to $pre
+        $self->FormatChunk($pre);
 	
-		$close = '' unless defined($close);
-		$attrs = '' unless defined($attrs);
-		if (defined($userAllowedTagSubset->{$tag})) {
-			my ($outattrs);
-			$outattrs = '';
-			while (($attrs =~ s/^\s*([a-z]+\w*)\s*\=\s*\"([^\"]*)\"\s*//i)
-				   || ($attrs =~ s/^\s*([a-z]+\w*)\s*\=\s*(\S+)\s*//i)
-				   || ($attrs =~ s/^\s*([a-z]+\w*)\s*\=\s*\"([^\"]*)\"?\s*//i)) {
-				$outattrs .= " $1=\"$2\"";
-			}
+        $close = '' unless defined($close);
+        $attrs = '' unless defined($attrs);
+        if (defined($userAllowedTagSubset->{$tag})) {
+            my ($outattrs);
+            $outattrs = '';
+            while (($attrs =~ s/^\s*([a-z]+\w*)\s*\=\s*\"([^\"]*)\"\s*//i)
+                   || ($attrs =~ s/^\s*([a-z]+\w*)\s*\=\s*(\S+)\s*//i)
+                   || ($attrs =~ s/^\s*([a-z]+\w*)\s*\=\s*\"([^\"]*)\"?\s*//i)) {
+                $outattrs .= " $1=\"$2\"";
+            }
 
-			$tagcontents = "<$close$tag$outattrs>";
-		} 
-		elsif (defined($self->{-specialtags}->{$tag}))
-		{
-			my $args;
-			my (%attrs);
-			while (($attrs =~ s/^\s*([a-z]+\w*)\s*\=\s*\"([^\"]*)\"\s*//i)
-				   || ($attrs =~ s/^\s*([a-z]+\w*)\s*\=\s*(\S+)\s*//i)
-				   || ($attrs =~ s/^\s*([a-z]+\w*)\s*\=\s*\"([^\"]*)\"?\s*//i)) {
-				$attrs{$1} = $2;
-			}
-
-			if ($text =~ s/^(.*?)\<\/$tag\w*\>//si)
-			{
-				$args = $1;
-			}
-			my @args = ($tag,\%attrs, $args);
-			unshift (@args, $self->{-callbackobj}) if defined($self->{-callbackobj});
-			$self->{-htmlparser}->text(&{$self->{-specialtags}->{$tag}}(@args));
-		}
-		else
-		{
-			$tagcontents = "\&lt;$close$tag$attrs&gt;";
-		}
-		$self->{-htmlparser}->parse($tagcontents);
-
-	}
+            $tagcontents = "<$close$tag$outattrs>";
+        } else {
+            $tagcontents = "\&lt\;$close$tag$attrs&gt\;";
+        }
+        $self->{-htmlparser}->parse($tagcontents);
+    }
 
     $self->FormatChunk($text) if ($text ne '');
 }
@@ -267,222 +200,215 @@ sub HandleParagraphType($$$)
     my ($outfunc) = $self->{-outfunc};
 
     if ($para =~ /^(([^\n\:]+\:\ *\n)?( *\w{0,3} *[\>])([^\n]*)(\n\3[^\n]*)+)\n*$/s) {
-		# quoted text. Preformat.
+        # quoted text. Preformat.
 
-		$self->{-htmlparser}->parse($lastinfo->{-posttags})
-			if (defined($lastinfo->{-posttags}));
-		delete($lastinfo->{-posttags});
-		$self->{-htmlparser}->parse("<pre>\n");
-		FormatParagraph($self,$para);
-		$self->{-htmlparser}->parse("</pre>\n")	
-	} elsif ($para =~ /^(\#|\/\*)\ /s) {
-		# code. Preformat.
+        $self->{-htmlparser}->parse($lastinfo->{-posttags})
+            if (defined($lastinfo->{-posttags}));
+        delete($lastinfo->{-posttags});
+        $self->{-htmlparser}->parse("<pre>\n");
+        FormatParagraph($self,$para);
+        $self->{-htmlparser}->parse("</pre>\n")	
+    } elsif ($para =~ /^(\#|\/\*)\ /s) {
+        # code. Preformat.
 
-		$self->{-htmlparser}->parse($lastinfo->{-posttags})
-			if (defined($lastinfo->{-posttags}));
-		delete($lastinfo->{-posttags});
-		$self->{-htmlparser}->parse("<pre>\n");
-		FormatParagraph($self,$para);
-		$self->{-htmlparser}->parse("</pre>\n")	
-	} elsif ($para =~ /^( *)([\*])( +)([^\n]*)(\n(\1\2\3|\1 \3)[^\n]*)*\n*$/s) {
-		# unnumbered list
-		if (defined($lastinfo->{-posttags})) {
-			if ($lastinfo->{-posttags} ne "</ul>\n") {
-				$self->{-htmlparser}->parse($lastinfo->{-posttags});
-				$self->{-htmlparser}->parse("<ul>");
-			}
-		} else {
-			$self->{-htmlparser}->parse("<ul>");
-		}
-		$lastinfo->{-posttags} = "</ul>\n";
-		while ($para =~ s/^\n*( *)([\*])( +)([^\n]*(\n(\1 \3)[^\n]*)*)//s) {
-			$self->{-htmlparser}->parse("<li>");
-			FormatParagraph($self,$4);
-			$self->{-htmlparser}->parse("</li>\n");
-		}
-	} elsif ($para =~ /^( *)(\d+)([\.\)\:\,\;]\ ).*?(\n \d+\3.*?)*$/s) {
-		# numbered list
-		my ($start) = $2;
-		if (defined($lastinfo->{-posttags})) {
-			if ($lastinfo->{-posttags} ne "</ol>\n" 
-				or (defined($lastinfo->{-listtype}) and $lastinfo->{-listtype} ne '1')) {
-				$self->{-htmlparser}->parse($lastinfo->{-posttags});
-				$self->{-htmlparser}->parse("<ol type=\"1\" start=\"$start\">");
-				$lastinfo->{-listtype} = '1';
-			}
-		} else {
-			$self->{-htmlparser}->parse("<ol type=\"1\" start=\"$start\">");
-			$lastinfo->{-listtype} = '1';
-		}
-		$lastinfo->{-posttags} = "</ol>\n";
-		while ($para =~ s/^\n*( *)(\d+)([\.\)\:\,\;]\ )(.*?)((\n *\d+\3.*?)*)$/$5/s) {
-			my ($newstart) = $2;
-			if ($newstart eq $start) {
-				$self->{-htmlparser}->parse("<li>");
-			} else {
-				$self->{-htmlparser}->parse("<li value=\"$newstart\">");
-			}
+        $self->{-htmlparser}->parse($lastinfo->{-posttags})
+            if (defined($lastinfo->{-posttags}));
+        delete($lastinfo->{-posttags});
+        $self->{-htmlparser}->parse("<pre>\n");
+        FormatParagraph($self,$para);
+        $self->{-htmlparser}->parse("</pre>\n")	
+    } elsif ($para =~ /^( *)([\*])( +)([^\n]*)(\n(\1\2\3|\1 \3)[^\n]*)*\n*$/s) {
+        # unnumbered list
+        if (defined($lastinfo->{-posttags})) {
+            if ($lastinfo->{-posttags} ne "</ul>\n") {
+                $self->{-htmlparser}->parse($lastinfo->{-posttags});
+                $self->{-htmlparser}->parse("<ul>");
+            }
+        } else {
+            $self->{-htmlparser}->parse("<ul>");
+        }
+        $lastinfo->{-posttags} = "</ul>\n";
+        while ($para =~ s/^\n*( *)([\*])( +)([^\n]*(\n(\1 \3)[^\n]*)*)//s) {
+            $self->{-htmlparser}->parse("<li>");
+            FormatParagraph($self,$4);
+            $self->{-htmlparser}->parse("</li>\n");
+        }
+    } elsif ($para =~ /^( *)(\d+)([\.\)\:\,\;]\ ).*?(\n \d+\3.*?)*$/s) {
+        # numbered list
+        my ($start) = $2;
+        if (defined($lastinfo->{-posttags})) {
+            if ($lastinfo->{-posttags} ne "</ol>\n" 
+                or (defined($lastinfo->{-listtype}) and $lastinfo->{-listtype} ne '1')) {
+                $self->{-htmlparser}->parse($lastinfo->{-posttags});
+                $self->{-htmlparser}->parse("<ol type=\"1\" start=\"$start\">");
+                $lastinfo->{-listtype} = '1';
+            }
+        } else {
+            $self->{-htmlparser}->parse("<ol type=\"1\" start=\"$start\">");
+            $lastinfo->{-listtype} = '1';
+        }
+        $lastinfo->{-posttags} = "</ol>\n";
+        while ($para =~ s/^\n*( *)(\d+)([\.\)\:\,\;]\ )(.*?)((\n *\d+\3.*?)*)$/$5/s) {
+            my ($newstart) = $2;
+            if ($newstart eq $start) {
+                $self->{-htmlparser}->parse("<li>");
+            } else {
+                $self->{-htmlparser}->parse("<li value=\"$newstart\">");
+            }
 
-			$start = $newstart;
-			$start++;
-			FormatParagraph($self,$4);
-			$self->{-htmlparser}->parse("</li>");
-		}
-	} elsif ($para =~ /^( *)([xvi]+)([\.\)\:]\ ).*?(\n [xvi]+\3.*?)*$/s) {
-		# lower roman list
-		if (defined($lastinfo->{-posttags})) {
-			if ($lastinfo->{-posttags} ne "</ol>\n" 
-				or (defined($lastinfo->{-listtype}) and $lastinfo->{-listtype} ne 'i')) {
-				$self->{-htmlparser}->parse($lastinfo->{-posttags});
-				$self->{-htmlparser}->parse("<ol type=\"i\">");
-				$lastinfo->{-listtype} = 'i';
-			}
-		} else {
-			$self->{-htmlparser}->parse("<ol type=\"i\">");
-			$lastinfo->{-listtype} = 'i';
-		}
-		$lastinfo->{-posttags} = "</ol>\n";
-		while ($para =~ s/^\n*( *)([xvi]+)([\.\)\:])(.*?)((\n *[xvi]+\3.*?)*)$/$5/s) {
-			$self->{-htmlparser}->parse("<li>");
-			FormatParagraph($self,$4);
-			$self->{-htmlparser}->parse("</li>");
-		}
-	} elsif ($para =~ /^( *)([XVI]+)([\.\)\:]\ ).*?(\n [XVI]+\3.*?)*$/s) {
-		# upper roman list
-		if (defined($lastinfo->{-posttags})) {
-			if ($lastinfo->{-posttags} ne "</ol>\n" 
-				or (defined($lastinfo->{-listtype}) and $lastinfo->{-listtype} ne 'I')) {
-				$self->{-htmlparser}->parse($lastinfo->{-posttags});
-				$self->{-htmlparser}->parse("<ol type=\"I\">");
-				$lastinfo->{-listtype} = 'I';
-			}
-		} else {
-			$self->{-htmlparser}->parse("<ol type=\"I\">");
-			$lastinfo->{-listtype} = 'I';
-		}
-		$lastinfo->{-posttags} = "</ol>\n";
-		while ($para =~ s/^\n*( *)([XVI]+)([\.\)\:])(.*?)((\n *[XVI]+\3.*?)*)$/$5/s) {
-			$self->{-htmlparser}->parse("<li>");
-			FormatParagraph($self,$4);
-			$self->{-htmlparser}->parse("</li>");
-		}
-	} elsif ($para =~ /^( *)([A-Z])([\.\)\:]\ )[^\n]*?(\n [A-Z]\3[^\n]*?)*$/s) {
-		# upper alpha numbered list
-		my ($start) = 1 + (ord($2) - ord('A'));
-		if (defined($lastinfo->{-posttags})) {
-			if ($lastinfo->{-posttags} ne "</ol>\n" 
-				or (defined($lastinfo->{-listtype}) and $lastinfo->{-listtype} ne 'A')) {
-				$self->{-htmlparser}->parse($lastinfo->{-posttags});
-				$self->{-htmlparser}->parse("<ol type=\"A\" start=\"$start\">");
-				$lastinfo->{-listtype} = 'A';
-			}
-		} else {
-			$self->{-htmlparser}->parse("<ol type=\"A\" start=\"$start\">");
-			$lastinfo->{-listtype} = 'A';
-		}
-		$lastinfo->{-posttags} = "</ol>\n";
-		while ($para =~ s/^\n*( *)([A-Z])([\.\)\:]\ )(.*?)((\n *[A-Z]\3.*?)*)$/$5/s) {
-			my ($newstart) = 1 + (ord($2) - ord('A'));
-			$self->{-htmlparser}->parse("</ol><ol type=\"A\" start=\"$newstart\">")
-				if ($start ne $newstart);
-			$start = $newstart;
-			$start++;
+            $start = $newstart;
+            $start++;
+            FormatParagraph($self,$4);
+            $self->{-htmlparser}->parse("</li>");
+        }
+    } elsif ($para =~ /^( *)([xvi]+)([\.\)\:]\ ).*?(\n [xvi]+\3.*?)*$/s) {
+        # lower roman list
+        if (defined($lastinfo->{-posttags})) {
+            if ($lastinfo->{-posttags} ne "</ol>\n" 
+                or (defined($lastinfo->{-listtype}) and $lastinfo->{-listtype} ne 'i')) {
+                $self->{-htmlparser}->parse($lastinfo->{-posttags});
+                $self->{-htmlparser}->parse("<ol type=\"i\">");
+                $lastinfo->{-listtype} = 'i';
+            }
+        } else {
+            $self->{-htmlparser}->parse("<ol type=\"i\">");
+            $lastinfo->{-listtype} = 'i';
+        }
+        $lastinfo->{-posttags} = "</ol>\n";
+        while ($para =~ s/^\n*( *)([xvi]+)([\.\)\:])(.*?)((\n *[xvi]+\3.*?)*)$/$5/s) {
+            $self->{-htmlparser}->parse("<li>");
+            FormatParagraph($self,$4);
+            $self->{-htmlparser}->parse("</li>");
+        }
+    } elsif ($para =~ /^( *)([XVI]+)([\.\)\:]\ ).*?(\n [XVI]+\3.*?)*$/s) {
+        # upper roman list
+        if (defined($lastinfo->{-posttags})) {
+            if ($lastinfo->{-posttags} ne "</ol>\n" 
+                or (defined($lastinfo->{-listtype}) and $lastinfo->{-listtype} ne 'I')) {
+                $self->{-htmlparser}->parse($lastinfo->{-posttags});
+                $self->{-htmlparser}->parse("<ol type=\"I\">");
+                $lastinfo->{-listtype} = 'I';
+            }
+        } else {
+            $self->{-htmlparser}->parse("<ol type=\"I\">");
+            $lastinfo->{-listtype} = 'I';
+        }
+        $lastinfo->{-posttags} = "</ol>\n";
+        while ($para =~ s/^\n*( *)([XVI]+)([\.\)\:])(.*?)((\n *[XVI]+\3.*?)*)$/$5/s) {
+            $self->{-htmlparser}->parse("<li>");
+            FormatParagraph($self,$4);
+            $self->{-htmlparser}->parse("</li>");
+        }
+    } elsif ($para =~ /^( *)([A-Z])([\.\)\:]\ )[^\n]*?(\n [A-Z]\3[^\n]*?)*$/s) {
+        # upper alpha numbered list
+        my ($start) = 1 + (ord($2) - ord('A'));
+        if (defined($lastinfo->{-posttags})) {
+            if ($lastinfo->{-posttags} ne "</ol>\n" 
+                or (defined($lastinfo->{-listtype}) and $lastinfo->{-listtype} ne 'A')) {
+                $self->{-htmlparser}->parse($lastinfo->{-posttags});
+                $self->{-htmlparser}->parse("<ol type=\"A\" start=\"$start\">");
+                $lastinfo->{-listtype} = 'A';
+            }
+        } else {
+            $self->{-htmlparser}->parse("<ol type=\"A\" start=\"$start\">");
+            $lastinfo->{-listtype} = 'A';
+        }
+        $lastinfo->{-posttags} = "</ol>\n";
+        while ($para =~ s/^\n*( *)([A-Z])([\.\)\:]\ )(.*?)((\n *[A-Z]\3.*?)*)$/$5/s) {
+            my ($newstart) = 1 + (ord($2) - ord('A'));
+            $self->{-htmlparser}->parse("</ol><ol type=\"A\" start=\"$newstart\">")
+                if ($start ne $newstart);
+            $start = $newstart;
+            $start++;
 
-			$self->{-htmlparser}->parse("<li>");
-			FormatParagraph($self,$4);
-			$self->{-htmlparser}->parse("</li>");
-		}
-	} elsif ($para =~ /^( *)([a-z])([\.\)\:]\ ).*?(\n [a-z]\3.*?)*$/s) {
-		my ($start) = 1 + (ord($2) - ord('a'));
-		# lower alpha numbered list
-		if (defined($lastinfo->{-posttags})) {
-			if ($lastinfo->{-posttags} ne "</ol>\n" 
-				or (defined($lastinfo->{-listtype}) and $lastinfo->{-listtype} ne 'a')) {
-				delete($lastinfo->{-liststart});
-				$self->{-htmlparser}->parse($lastinfo->{-posttags});
-				$self->{-htmlparser}->parse("<ol type=\"a\" start=\"$start\">");
-				$lastinfo->{-listtype} = 'a';
-			}
-		} else {
-			$self->{-htmlparser}->parse("<ol type=\"a\" start=\"$start\">");
-			$lastinfo->{-listtype} = 'a';
-		}
-		$lastinfo->{-posttags} = "</ol>\n";
-		while ($para =~ s/^\n*( *)([a-z])([\.\)\:]\ )(.*?)((\n *[a-z]\3.*?)*)$/$5/s) {
-			my ($newstart) = 1 + (ord($2) - ord('a'));
-			$self->{-htmlparser}->parse("</ol><ol type=\"a\" start=\"$newstart\">")
-				if ($start ne $newstart);
-			$start = $newstart;
-			$start++;
+            $self->{-htmlparser}->parse("<li>");
+            FormatParagraph($self,$4);
+            $self->{-htmlparser}->parse("</li>");
+        }
+    } elsif ($para =~ /^( *)([a-z])([\.\)\:]\ ).*?(\n [a-z]\3.*?)*$/s) {
+        my ($start) = 1 + (ord($2) - ord('a'));
+        # lower alpha numbered list
+        if (defined($lastinfo->{-posttags})) {
+            if ($lastinfo->{-posttags} ne "</ol>\n" 
+                or (defined($lastinfo->{-listtype}) and $lastinfo->{-listtype} ne 'a')) {
+                delete($lastinfo->{-liststart});
+                $self->{-htmlparser}->parse($lastinfo->{-posttags});
+                $self->{-htmlparser}->parse("<ol type=\"a\" start=\"$start\">");
+                $lastinfo->{-listtype} = 'a';
+            }
+        } else {
+            $self->{-htmlparser}->parse("<ol type=\"a\" start=\"$start\">");
+            $lastinfo->{-listtype} = 'a';
+        }
+        $lastinfo->{-posttags} = "</ol>\n";
+        while ($para =~ s/^\n*( *)([a-z])([\.\)\:]\ )(.*?)((\n *[a-z]\3.*?)*)$/$5/s) {
+            my ($newstart) = 1 + (ord($2) - ord('a'));
+            $self->{-htmlparser}->parse("</ol><ol type=\"a\" start=\"$newstart\">")
+                if ($start ne $newstart);
+            $start = $newstart;
+            $start++;
 
-			$self->{-htmlparser}->parse("<li>");
-			FormatParagraph($self,$4);
-			$self->{-htmlparser}->parse("</li>");
-		}
-	} elsif ($para =~ /^(=+)\s*(.*?)\s*\1\n*$/)
-	{
-		my $headerLevel = length($1);
-		my $headerBody = $2;
-		$self->{-htmlparser}->parse("<h$headerLevel>");
-		FormatParagraph($self, $headerBody);
-		$self->{-htmlparser}->parse("</h$headerLevel>");
-	} elsif ($para =~ /^( +)([^\s][^\n]*)(\n\1[^\s][^\n]*)*\n*$/s) {
-		# blockquote indent
-		if (defined($lastinfo->{-posttags})) {
-			if ($lastinfo->{-posttags} ne "</blockquote>\n") {
-				$self->{-htmlparser}->parse($lastinfo->{-posttags});
-				$self->{-htmlparser}->parse("<blockquote>");
-			}
-		} else {
-			$self->{-htmlparser}->parse("<blockquote>");
-		}
-		$lastinfo->{-posttags} = "</blockquote>\n";
-		$self->{-htmlparser}->parse("<p>");
-		FormatParagraph($self,$para);
-		$self->{-htmlparser}->parse("</p>\n\n");
-	} elsif ($para =~ s/^\s*\<blockquote\s*.*?\>(.*?)\<\/blockquote\s*\>\s*$/$1/si) {
-		# blockquote indent
-		if (defined($lastinfo->{-posttags})) {
-			if ($lastinfo->{-posttags} ne "</blockquote>\n") {
-				$self->{-htmlparser}->parse($lastinfo->{-posttags});
-				$self->{-htmlparser}->parse("<blockquote>");
-			}
-		} else {
-			$self->{-htmlparser}->parse("<blockquote>");
-		}
-		$lastinfo->{-posttags} = "</blockquote>\n";
-		$self->{-htmlparser}->parse("<p>");
-		FormatParagraph($self,$para);
-		$self->{-htmlparser}->parse("</p>\n\n");
+            $self->{-htmlparser}->parse("<li>");
+            FormatParagraph($self,$4);
+            $self->{-htmlparser}->parse("</li>");
+        }
+    } elsif ($para =~ /^( +)([^\s][^\n]*)(\n\1[^\s][^\n]*)*\n*$/s) {
+        # blockquote indent
+        if (defined($lastinfo->{-posttags})) {
+            if ($lastinfo->{-posttags} ne "</blockquote>\n") {
+                $self->{-htmlparser}->parse($lastinfo->{-posttags});
+                $self->{-htmlparser}->parse("<blockquote>");
+            }
+        } else {
+            $self->{-htmlparser}->parse("<blockquote>");
+        }
+        $lastinfo->{-posttags} = "</blockquote>\n";
+        $self->{-htmlparser}->parse("<p>");
+        FormatParagraph($self,$para);
+        $self->{-htmlparser}->parse("</p>\n\n");
+    } elsif ($para =~ s/^\s*\<blockquote\s*.*?\>(.*?)\<\/blockquote\s*\>\s*$/$1/si) {
+        # blockquote indent
+        if (defined($lastinfo->{-posttags})) {
+            if ($lastinfo->{-posttags} ne "</blockquote>\n") {
+                $self->{-htmlparser}->parse($lastinfo->{-posttags});
+                $self->{-htmlparser}->parse("<blockquote>");
+            }
+        } else {
+            $self->{-htmlparser}->parse("<blockquote>");
+        }
+        $lastinfo->{-posttags} = "</blockquote>\n";
+        $self->{-htmlparser}->parse("<p>");
+        FormatParagraph($self,$para);
+        $self->{-htmlparser}->parse("</p>\n\n");
     } else {
-		$self->{-htmlparser}->parse($lastinfo->{-posttags}) 
-			if (defined($lastinfo->{-posttags}));
-		delete($lastinfo->{-posttags});
-		$self->{-htmlparser}->parse("<p>");
-		FormatParagraph($self,$para);
-		$self->{-htmlparser}->parse("</p>\n\n");
-	}
+        $self->{-htmlparser}->parse($lastinfo->{-posttags}) 
+            if (defined($lastinfo->{-posttags}));
+        delete($lastinfo->{-posttags});
+        $self->{-htmlparser}->parse("<p>");
+        FormatParagraph($self,$para);
+        $self->{-htmlparser}->parse("</p>\n\n");
+    }
 }
 
 sub BreakIntoParagraphs($$)
 {
     my ($self,$text) = @_;
     if (defined($text)) {
-		if ($text =~ /\n/) {
-			$text =~ s/\r\r+/\n\n/g;
-			$text =~ s/\r//g;
-		} else {
-			$text =~ s/\r/\n/g;
-		}
-		my ($lastinfo) = {};
-		$text =~ s/(\<blockquote\s*.*?\>)/\n\n$1/sig;
-		$text =~ s/(\<\/blockquote\s*\>)/$1\n\n/sig;
-		while ($text =~ s/^\n*(.*?)(\n(\ *\n)+)//s) {
-			HandleParagraphType($self, $lastinfo, $1);
-		}
-		HandleParagraphType($self, $lastinfo, $text)
-			if (defined($text) and $text ne '');
-	}
+        if ($text =~ /\n/) {
+            $text =~ s/\r\r+/\n\n/g;
+            $text =~ s/\r//g;
+        } else {
+            $text =~ s/\r/\n/g;
+        }
+        my ($lastinfo) = {};
+        $text =~ s/(\<blockquote\s*.*?\>)/\n\n$1/sig;
+        $text =~ s/(\<\/blockquote\s*\>)/$1\n\n/sig;
+        while ($text =~ s/^\n*(.*?)(\n(\ *\n)+)//s) {
+            HandleParagraphType($self, $lastinfo, $1);
+        }
+        HandleParagraphType($self, $lastinfo, $text)
+            if (defined($text) and $text ne '');
+    }
 }
 
 sub parsefile
@@ -493,10 +419,10 @@ sub parsefile
 
     $self->flutterby_begin_parse() unless ($parseinprogress);
     foreach (@_) {
-		open(FCMSTEXT_I, $_)
-			|| die "Unable to open $_\n";
-		$self->parse(join('',<FCMSTEXT_I>));
-		close FCMSTEXT_I;
+        open(FCMSTEXT_I, $_)
+            || die "Unable to open $_\n";
+        $self->parse(join('',<FCMSTEXT_I>));
+        close FCMSTEXT_I;
     }
     $self->flutterby_end_parse() unless ($parseinprogress);
 
@@ -505,7 +431,7 @@ sub parsefile
 
 sub parse_file
 {
-    return &parsefile(@_);
+    &parsefile(@_);
 }
 
 sub parse

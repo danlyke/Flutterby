@@ -9,15 +9,17 @@ sub new()
     my ($type,%args) = @_;
     my $class = ref($type) || $type;
     my ($self) = 
-	{
-	 -outputfunc => \&sendToOutput,
-	};
+    {
+     -outputfunc => \&sendToOutput,
+    };
     foreach (keys %args) {
-		$self->{$_} = $args{$_}
-			if (defined({
-						 -outputfunc => 1,
-						}->{$_}));
-	}
+        $self->{$_} = $args{$_}
+            if (defined({
+                         -outputfunc => 1,
+                         -suppressEvents => 1,
+                         -relNoFollow => 1,
+                        }->{$_}));
+    }
     return bless($self, $class);
 }
 
@@ -33,13 +35,13 @@ sub sendToOutput()
     my ($r) = $self->{-outputdest};
 
     if (ref($r) eq 'GLOB') {
-		print {*$r} $t;
-	} elsif (ref($r) eq 'SCALAR') {
-		$$r .= $t
-			if (defined($t));
-	} else {
-		print $t;
-	}
+        print {*$r} $t;
+    } elsif (ref($r) eq 'SCALAR') {
+        $$r .= $t
+            if (defined($t));
+    } else {
+        print $t;
+    }
 }
 
 sub outputChildren
@@ -50,8 +52,8 @@ sub outputChildren
     my ($outputfunc) = $self->{-outputfunc};
     unless (ref($childinfo))
     {
-		&$outputfunc($self,$childinfo);
-		return;
+        &$outputfunc($self,$childinfo);
+        return;
     }
 
     $start = 0;
@@ -62,20 +64,20 @@ sub outputChildren
 
     my ($i);
     for ($i = $start; $i <= $#$childinfo; $i += 2) {
-		if ($childinfo->[$i] eq '0') {	    
-			&$outputfunc($self,$childinfo->[$i + 1]);
-		} elsif ($childinfo->[$i] eq '!') {
-			&$outputfunc($self, '<!-- ');
-			if (ref($childinfo->[$i + 1]) eq 'ARRAY') {
-				$self->outputChildren($childinfo->[$i + 1]);
-			} else {
-				&$outputfunc($self, $childinfo->[$i + 1]);
-			}
-			&$outputfunc($self, ' -->');
-		} else {
-			$self->outputLeaf($childinfo->[$i],$childinfo->[$i + 1]);
-		}
-	}
+        if ($childinfo->[$i] eq '0') {	    
+            &$outputfunc($self,$childinfo->[$i + 1]);
+        } elsif ($childinfo->[$i] eq '!') {
+            &$outputfunc($self, '<!-- ');
+            if (ref($childinfo->[$i + 1]) eq 'ARRAY') {
+                $self->outputChildren($childinfo->[$i + 1]);
+            } else {
+                &$outputfunc($self, $childinfo->[$i + 1]);
+            }
+            &$outputfunc($self, ' -->');
+        } else {
+            $self->outputLeaf($childinfo->[$i],$childinfo->[$i + 1]);
+        }
+    }
 }
 
 sub outputTag
@@ -85,30 +87,45 @@ sub outputTag
     $varlist = $self->{-varlist};
     my ($outputfunc) = $self->{-outputfunc};
 
+    if (lc($tag) eq 'a') {
+        undef $attributes->{'target'}
+            if (defined($attributes->{'target'}));
+        if ($self->{-suppressEvents}) {
+            undef $attributes->{$_}
+                for (grep(/^on/,keys %$attributes));
+        }
+        $attributes->{'rel'} = 'nofollow'
+            if ($self->{-relNoFollow});
+    }
+    if (lc($tag) eq 'embed') {
+        $attributes->{AllowScriptAccess} = 'never';
+        $attributes->{allownetworking} = 'internal';
+    }
+
     &$outputfunc($self,"<$tag");
     foreach (keys %$attributes) {
-		if ($_ =~ /^\w+$/) {
-			if (defined($attributes->{$_})) {
-				&$outputfunc($self," $_");
-				&$outputfunc($self,Flutterby::Util::subst('="'.
-														  HTML::Entities::encode($attributes->{$_})
-														  .'"',@$varlist));
-			} else {
-				&$outputfunc($self," $_=\"$_\"");
-			}
-		}
+        if ($_ =~ /^\w+$/) {
+            if (defined($attributes->{$_})) {
+                &$outputfunc($self," $_");
+                &$outputfunc($self,Flutterby::Util::subst('="'.
+                                                          HTML::Entities::encode($attributes->{$_})
+                                                          .'"',@$varlist));
+            } else {
+                &$outputfunc($self," $_=\"$_\"");
+            }
+        }
     }
     if ($#$childinfo > 0) {
-		&$outputfunc($self,">");
-		$self->outputChildren($childinfo);
-		&$outputfunc($self,\&$post($self,$tag,$attributes,$childinfo))
-			if (defined($post));
-		&$outputfunc($self,"</$tag>");
-	} else {
-		&$outputfunc($self,"></$tag>");
-		&$outputfunc($self,\&$post($self,$tag,$attributes,$childinfo))
-			if (defined($post));
-	}
+        &$outputfunc($self,">");
+        $self->outputChildren($childinfo);
+        &$outputfunc($self,\&$post($self,$tag,$attributes,$childinfo))
+            if (defined($post));
+        &$outputfunc($self,"</$tag>");
+    } else {
+        &$outputfunc($self,"></$tag>");
+        &$outputfunc($self,\&$post($self,$tag,$attributes,$childinfo))
+            if (defined($post));
+    }
 }
 
 sub outputTagNoSubst
@@ -117,31 +134,31 @@ sub outputTagNoSubst
     my ($varlist);
     $varlist = $self->{-varlist};
     my ($outputfunc) = $self->{-outputfunc};
-
+    
     &$outputfunc($self,"<$tag");
     foreach (keys %$attributes) {
-		if (/^\w+$/) {
-			if (defined($attributes->{$_})) {
-				&$outputfunc($self," $_");
-				&$outputfunc($self,Flutterby::Util::subst('="'.
-														  HTML::Entities::encode($attributes->{$_})
-														  .'"',@$varlist));
-			} else {
-				&$outputfunc($self," $_=\"$_\"");
-			}
-		}
+        if (/^\w+$/) {
+            if (defined($attributes->{$_})) {
+                &$outputfunc($self," $_");
+                &$outputfunc($self,Flutterby::Util::subst('="'.
+                                                          HTML::Entities::encode($attributes->{$_})
+                                                          .'"',@$varlist));
+            } else {
+                &$outputfunc($self," $_=\"$_\"");
+            }
+        }
     }
     if ($#$childinfo > 0) {
-		&$outputfunc($self,">");
-		$self->outputChildren($childinfo);
-		&$outputfunc($self,\&$post($self,$tag,$attributes,$childinfo))
-			if (defined($post));
-		&$outputfunc($self,"</$tag>");
-	} else {
-		&$outputfunc($self,'></$tag>');
-		&$outputfunc($self,\&$post($self,$tag,$attributes,$childinfo))
-			if (defined($post));
-	}
+        &$outputfunc($self,">");
+        $self->outputChildren($childinfo);
+        &$outputfunc($self,\&$post($self,$tag,$attributes,$childinfo))
+            if (defined($post));
+        &$outputfunc($self,"</$tag>");
+    } else {
+        &$outputfunc($self,'></$tag>');
+        &$outputfunc($self,\&$post($self,$tag,$attributes,$childinfo))
+            if (defined($post));
+    }
 }
 
 
@@ -156,7 +173,7 @@ sub output
 {
     my ($self, $childinfo) = @_;
     $self->outputChildren($childinfo,0);
-	#    $self->outputLeaf($tree->[0], $tree->[1]);
+    #    $self->outputLeaf($tree->[0], $tree->[1]);
 }
 
 1;
