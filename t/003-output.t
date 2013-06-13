@@ -11,15 +11,26 @@ use Data::Dumper;
 my @parsers =
     (
      'Flutterby::Parse::Text',
-#     'Flutterby::Parse::HTML',
+     'Flutterby::Parse::HTML',
     );
 
 my @output = 
     (
      'Flutterby::Output::HTML',
-#     'Flutterby::Output::HTMLProcessed',
+     'Flutterby::Output::HTMLProcessed',
     );
 
+my %outputchecks =
+    (
+     'Flutterby::Parse::Text/Flutterby::Output::HTML' => '<html><body><p>a simple test of <a href="a link" onclick="invalid">a link</a> here</p>
+
+</body></html>',
+     'Flutterby::Parse::Text/Flutterby::Output::HTMLProcessed' => '<html><body><p>a simple test of <a href="a link" onclick="invalid">a link</a> here</p>
+
+</body></html>',
+     'Flutterby::Parse::HTML/Flutterby::Output::HTML' => 'a simple test of <a href="a link" onclick="invalid">a link</a> here',
+     'Flutterby::Parse::HTML/Flutterby::Output::HTMLProcessed' => 'a simple test of <a href="a link" onclick="invalid">a link</a> here'
+    );
 
 for my $parser_name (@parsers)
 {
@@ -27,8 +38,13 @@ for my $parser_name (@parsers)
     my $t = $parser->parse('a simple test of <a href="a link" onClick="invalid">a link</a> here');
     for my $output_name (@output)
     {
-        my $output = $output_name->new;
+        my $text = '';
+        my $output = $output_name->new();
+        $output->setOutput(\$text);
         $output->output($t);
-        print "\n";
+#        print "'$parser_name/$output_name' => '$text'\n";
+        ok $text eq $outputchecks{"$parser_name/$output_name"}, "Checking $parser_name/$output_name";
     }
 }
+
+done_testing;

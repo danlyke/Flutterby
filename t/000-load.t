@@ -2,7 +2,8 @@
 
 # ABSTRACT: Test that all library modules can load successfully
 
-use Test::Most 'bail';
+use Test::Most  qw/bail !blessed/;
+use Scalar::Util qw/blessed/;
 
 BEGIN
 {
@@ -35,3 +36,4 @@ BEGIN
 
     use_ok $_ for @modules;
 }
+done_testing;

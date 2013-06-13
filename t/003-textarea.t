@@ -1,6 +1,8 @@
 #!/usr/bin/perl -w
 
-use Data::Dumper;
+use Test::Most  qw/bail !blessed/;
+use Scalar::Util qw/blessed/;
+
 use Flutterby::Parse::Text;
 use Flutterby::Parse::FullyEscapedString;
 use Flutterby::Parse::HTML;
@@ -17,8 +19,10 @@ my $testtext = 'Some stuff &#65; goes here';
 my $parser = Flutterby::Parse::FullyEscapedString->new();
 my $t = $parser->parse($testtext);
 my $o = Flutterby::Output::HTML->new;
-print $o->output($t);
-print "\n";
+my $text = '';
+$o->setOutput(\$text);
+$o->output($t);
+ok $text eq 'Some stuff &amp;#65; goes here', "First string test";
 
 # $cgi->param(abc => $testtext);
 # my $out = Flutterby::Output::HTMLProcessed->new(-cgi => $cgi);
@@ -38,3 +42,5 @@ print "\n";
 # print "\n";
 # print join(',', $cgi->param);
 # print "\n";
+
+done_testing;
