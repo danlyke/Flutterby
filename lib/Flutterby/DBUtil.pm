@@ -1,37 +1,35 @@
 #!/usr/bin/perl -w
 use strict;
 package Flutterby::DBUtil;
+use utf8::all;
+use Try::Tiny;
 
 sub escapeToEntities($$@)
 {
     my ($cgi, $t, $log) = @_;
-    if (defined($t))
-    {
-	if ($cgi->charset() eq 'utf-8')
-	{
-	    use utf8;
-	    $$log .= "escaping UTF-8\n"
-		if (defined($log));
-	    while ($t =~ /^(.*)([\x80-\x{ffff}])(.*)$/s)
-	    {
-		$$log .= sprintf(" added %x\n", ord($2))
-		    if (defined($log));
-
-		$t = sprintf("%s&#%d;%s",$1,ord($2),$3);
-	    }
-	}
-	else
-	{
-	    $$log .= "escaping normal:\n\n$t\n"
-		if (defined($log));
-	    while ($t =~ /^(.*)([\x80-\x{ffff}])(.*)$/s)
-	    {
-		$$log .= sprintf(" added %x\n", ord($2))
-		    if (defined($log));
-
-		$t = sprintf("%s&#%d;%s",$1,ord($2),$3);
-	    }
-	}
+    if (defined($t)) {
+        if ($cgi->charset() eq 'utf-8') {
+            use utf8;
+            $$log .= "escaping UTF-8\n"
+                if (defined($log));
+            while ($t =~ /^(.*)([\x80-\x{fffffff}])(.*)$/s) {
+                $$log .= sprintf(" added %x\n", ord($2))
+                    if (defined($log));
+                
+                $t = sprintf("%s&#%d;%s",$1,ord($2),$3);
+            }
+        }
+        else
+        {
+            $$log .= "escaping normal:\n\n$t\n"
+                if (defined($log));
+            while ($t =~ /^(.*)([\x80-\x{fffffff}])(.*)$/s) {
+                $$log .= sprintf(" added %x\n", ord($2))
+                    if (defined($log));
+                
+                $t = sprintf("%s&#%d;%s",$1,ord($2),$3);
+            }
+        }
     }
     return $t;
 }
@@ -68,7 +66,7 @@ sub updateMultipleRecords
 
 	foreach (@escapefields)
 	{
-	    escapeFieldsToEntities($cgi, "$_\!$record");
+#	    escapeFieldsToEntities($cgi, "$_\!$record");
 	}
 	
 
@@ -77,7 +75,7 @@ sub updateMultipleRecords
 	    $sql .= join(',',
 			 map 
 			 {
-			   "$_=".$dbh->quote($cgi->param('_'.$_.'!'.$record));
+			   "$_=".$dbh->quote(scalar($cgi->param('_'.$_.'!'.$record)));
 			 } grep {defined($cgi->param('_'.$_.'!'.$record))} @$fields);
 	    $sql .= " WHERE $primary=".$dbh->quote($cgi->param('_'.$primary.'!'.$record));
 	  }
@@ -86,10 +84,10 @@ sub updateMultipleRecords
 	    $sql .= join(',',
 			 map 
 			 {
-			   "$fields->{$_}=".$dbh->quote($cgi->param($_.'!'.$record));
+			   "$fields->{$_}=".$dbh->quote(scalar($cgi->param($_.'!'.$record)));
 			 } grep {defined($cgi->param($_.'!'.$record))} keys %$fields);
 	    $sql .= " WHERE $fields->{$primary}="
-	      .$dbh->quote($cgi->param($primary.'!'.$record));
+	      .$dbh->quote(scalar($cgi->param($primary.'!'.$record)));
 	  }
 	else
 	  {
@@ -110,18 +108,18 @@ sub updateRecord
 	$sql = join(',',
 		     map 
 		     {
-		       "$_=".$dbh->quote($cgi->param("_$_"));
+		       "$_=".$dbh->quote(scalar($cgi->param("_$_")));
 		     } grep { defined($cgi->param("_$_")) } @$fields);
-        $where = " WHERE $primary=".$dbh->quote($cgi->param("_$primary"));
+        $where = " WHERE $primary=".$dbh->quote(scalar($cgi->param("_$primary")));
       }
     elsif (ref($fields) eq 'HASH')
       {
 	$sql = join(',',
  		     map 
 		     {
-		       "$fields->{$_}=".$dbh->quote($cgi->param("_$_"));
+		       "$fields->{$_}=".$dbh->quote(scalar($cgi->param("_$_")));
 		     } grep { defined($cgi->param("_$_")) } keys %$fields);
-        $where = " WHERE $fields->{$primary}=".$dbh->quote($cgi->param("_$primary"));
+        $where = " WHERE $fields->{$primary}=".$dbh->quote(scalar($cgi->param("_$primary")));
       }
     else
       {
